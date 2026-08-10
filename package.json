@@ -1,0 +1,16 @@
+{
+  "name": "krti2026",
+  "private": true,
+  "workspaces": [
+    "frontend"
+  ],
+  "scripts": {
+    "backend:test": "python -m pytest backend/tests -q",
+    "frontend:test": "npm --workspace frontend run test:run",
+    "frontend:typecheck": "npm --workspace frontend run typecheck",
+    "frontend:build": "npm --workspace frontend run build",
+    "test": "npm run backend:test && npm run frontend:test",
+    "typecheck": "npm run frontend:typecheck",
+    "build": "npm run frontend:build"
+  }
+}

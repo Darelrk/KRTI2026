@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+*.egg-info/
+
+# Frontend dependencies and generated output
+frontend/node_modules/
+frontend/dist/
+frontend/.tanstack/
+frontend/test-results/
+frontend/coverage/
+
+# Local tools and screenshots
+.chrome-devtools/
+.pixelbrowse/
+.superpowers/
+
+# Local datasets, model weights, runs, and generated output
+datasets/
+model/
+!model/
+!model/.gitkeep
+runs/
+out/
+*.pt
+*.onnx
+*.engine
+
+# Local media and temporary files
+*.mp4
+*.avi
+*.mov
+*.webm
+*.log
+.env
+frontend/public/demo/test-frame.jpg
+test_frame.jpg
