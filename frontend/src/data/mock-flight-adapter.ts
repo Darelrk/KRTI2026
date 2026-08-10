@@ -70,8 +70,8 @@ function telemetryFor(
         ? 18
         : Math.max(19, 72 - Math.floor(tick / 300)),
     voltage: scenario === 'low-battery' ? 13.7 : 15.9,
-    latitude: noGps ? null : -7.7706 + tick / 1_000_000,
-    longitude: noGps ? null : 110.3776 + tick / 1_000_000,
+    latitude: noGps ? null : 3.5633609133111217,
+    longitude: noGps ? null : 98.67340287653748,
     gpsFix: noGps ? 0 : 3,
     gpsSatellites: noGps ? 0 : 12,
     hdop: noGps ? null : 0.8,

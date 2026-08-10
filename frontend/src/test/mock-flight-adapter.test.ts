@@ -28,8 +28,8 @@ describe('mock VTOL flight adapter', () => {
     const telemetry = events.find((event) => event.type === 'telemetry')
     expect(telemetry).toMatchObject({
       mode: 'MANUAL',
-      latitude: -7.7706,
-      longitude: 110.3776,
+      latitude: 3.5633609133111217,
+      longitude: 98.67340287653748,
       localXM: 12.5,
       localYM: 8.25,
       rangefinderM: 5.9,

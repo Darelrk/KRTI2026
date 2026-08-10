@@ -8,25 +8,14 @@ import {
   courseHeadingToOverlay,
   coursePointToOverlay,
   geoPointToCourse,
+  type MissionSite,
+  type OverlayCalibration,
 } from '../domain/mission-map'
-import type {
-  CoursePoint,
-  MissionSite,
-  OverlayCalibration,
-} from '../domain/mission-map'
-
-export type RouteMarker = {
-  id: string
-  kind: 'start' | 'waypoint' | 'gate' | 'drop_zone' | 'landing_pad'
-  point: CoursePoint
-}
 
 type Props = {
   telemetry: TelemetryEvent | null
-  track: FlightState['track']
   mission: FlightState['mission']
   site?: MissionSite
-  route: RouteMarker[]
   calibration: OverlayCalibration
   baseMapAvailable: boolean
 }
@@ -39,7 +28,7 @@ function telemetryPosition(telemetry: TelemetryEvent | null) {
     : null
 }
 
-function localPosition(telemetry: TelemetryEvent | null): CoursePoint | null {
+function localPosition(telemetry: TelemetryEvent | null) {
   if (telemetry?.localXM === null || telemetry?.localYM === null || !telemetry) {
     return null
   }
@@ -49,34 +38,21 @@ function localPosition(telemetry: TelemetryEvent | null): CoursePoint | null {
   }
 }
 
-function formatPoint(point: CoursePoint) {
-  return `${point.x},${point.y}`
-}
-
 function formatCoordinate(value: number, positive: string, negative: string) {
   return `${Math.abs(value).toFixed(6)}° ${value >= 0 ? positive : negative}`
 }
 
+
 export function NavigationMap({
   telemetry,
-  track,
   mission,
   site,
-  route,
   calibration,
   baseMapAvailable,
 }: Props) {
-  const livePosition = telemetryPosition(telemetry) ?? track.at(-1) ?? null
-  const [mapCenter, setMapCenter] = useState(() => livePosition ?? site?.center ?? null)
+  const livePosition = telemetryPosition(telemetry)
+  const [mapCenter, setMapCenter] = useState(() => site?.center ?? livePosition ?? null)
   const [refreshKey, setRefreshKey] = useState(0)
-  const routePoints = route.map(({ point }) =>
-    coursePointToOverlay(point, calibration),
-  )
-  const trackPoints = site
-    ? track.map((point) =>
-        coursePointToOverlay(geoPointToCourse(point, site), calibration),
-      )
-    : []
   const currentPoint = site && livePosition
     ? coursePointToOverlay(geoPointToCourse(livePosition, site), calibration)
     : localPosition(telemetry)
@@ -112,7 +88,7 @@ export function NavigationMap({
           <iframe
             key={refreshKey}
             className="navigation-map__base"
-            src={buildGoogleMapsSatelliteEmbedUrl(mapCenter!)}
+            src={buildGoogleMapsSatelliteEmbedUrl(mapCenter!, 16)}
             title="VTOL satellite base map"
             tabIndex={-1}
           />
@@ -125,43 +101,13 @@ export function NavigationMap({
         <div className="navigation-map__north" aria-label="North up">
           N ↑
         </div>
-        <svg
-          className="navigation-map__overlay"
-          viewBox="0 0 100 100"
-          role="img"
-          aria-label="VTOL map overlay"
-        >
-          <polyline
-            aria-label="VTOL mission route"
-            className="navigation-map__route"
-            points={routePoints.map(formatPoint).join(' ')}
-            fill="none"
-          />
-          {trackPoints.length > 1 && (
-            <polyline
-              aria-label="VTOL travelled track"
-              className="navigation-map__track"
-              points={trackPoints.map(formatPoint).join(' ')}
-              fill="none"
-            />
-          )}
-          {route.map((marker, index) => {
-            const point = routePoints[index]!
-            return (
-              <g
-                key={marker.id}
-                aria-label={`${marker.kind} ${marker.id}`}
-                className={`navigation-map__marker navigation-map__marker--${marker.kind}`}
-                transform={`translate(${point.x} ${point.y})`}
-              >
-                <circle r="1.8" />
-                <text x="2.5" y="1">
-                  {marker.id.toUpperCase()}
-                </text>
-              </g>
-            )
-          })}
-          {currentPoint && telemetry && (
+        {currentPoint && telemetry && (
+          <svg
+            className="navigation-map__overlay"
+            viewBox="0 0 100 100"
+            role="img"
+            aria-label="VTOL drone position"
+          >
             <g
               aria-label="VTOL position marker"
               className="navigation-map__vehicle"
@@ -172,10 +118,7 @@ export function NavigationMap({
               <circle r="3.4" />
               <path d="M 0 -4.2 L 2.5 3.2 L 0 1.8 L -2.5 3.2 Z" />
             </g>
-          )}
-        </svg>
-        {!currentPoint && (
-          <div className="navigation-map__empty">WAITING FOR GPS FIX</div>
+          </svg>
         )}
       </div>
       <footer className="navigation-map__readout">
@@ -187,8 +130,6 @@ export function NavigationMap({
             {formatCoordinate(livePosition.latitude, 'N', 'S')} ·{' '}
             {formatCoordinate(livePosition.longitude, 'E', 'W')}
           </span>
-        ) : currentPoint ? (
-          <span>LOCAL POSITION ACTIVE</span>
         ) : (
           <span>POSITION UNAVAILABLE</span>
         )}

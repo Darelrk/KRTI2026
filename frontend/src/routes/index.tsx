@@ -9,17 +9,17 @@ import { PositionTelemetry } from '../components/PositionTelemetry'
 import { SafetyEventQueue } from '../components/SafetyEventQueue'
 import { StatusRail } from '../components/StatusRail'
 import { VideoViewport } from '../components/VideoViewport'
-import type { RouteMarker } from '../components/NavigationMap'
-import type { OverlayCalibration } from '../domain/mission-map'
+import type { MissionSite, OverlayCalibration } from '../domain/mission-map'
 import { useFlightSession } from '../hooks/use-flight-session'
 
-const route: RouteMarker[] = [
-  { id: 'start', kind: 'start', point: { x: 12, y: 82 } },
-  { id: 'wp1', kind: 'waypoint', point: { x: 30, y: 60 } },
-  { id: 'wp2', kind: 'waypoint', point: { x: 52, y: 34 } },
-  { id: 'drop', kind: 'drop_zone', point: { x: 74, y: 48 } },
-  { id: 'land', kind: 'landing_pad', point: { x: 86, y: 78 } },
-]
+
+const soewondoSite: MissionSite = {
+  name: 'Lanud Soewondo',
+  center: { latitude: 3.5633609133111217, longitude: 98.67340287653748 },
+  courseReference: { x: 50, y: 50 },
+  metersPerUnit: { x: 0.8, y: 0.6 },
+  courseUpBearingDeg: 46,
+}
 
 const calibration: OverlayCalibration = {
   courseAnchor: { x: 50, y: 50 },
@@ -45,11 +45,10 @@ function MissionOperationsPage() {
         <aside className="mission-sidebar">
           <NavigationMap
             telemetry={state.telemetry}
-            track={state.track}
             mission={state.mission}
-            route={route}
+            site={soewondoSite}
             calibration={calibration}
-            baseMapAvailable={false}
+            baseMapAvailable
           />
           <PositionTelemetry telemetry={state.telemetry} />
           <PayloadStatus state={state.payload} />

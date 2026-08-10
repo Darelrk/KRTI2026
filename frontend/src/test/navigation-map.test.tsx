@@ -1,7 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import { NavigationMap } from '../components/NavigationMap'
-import type { RouteMarker } from '../components/NavigationMap'
 import type { TelemetryEvent } from '../domain/flight'
 import type {
   MissionSite,
@@ -25,13 +24,6 @@ const calibration: OverlayCalibration = {
   rotationDeg: 0,
 }
 
-const route: RouteMarker[] = [
-  { id: 'start', kind: 'start', point: { x: 45, y: 55 } },
-  { id: 'wp1', kind: 'waypoint', point: { x: 50, y: 50 } },
-  { id: 'gate', kind: 'gate', point: { x: 55, y: 45 } },
-  { id: 'drop', kind: 'drop_zone', point: { x: 60, y: 40 } },
-  { id: 'land', kind: 'landing_pad', point: { x: 65, y: 35 } },
-]
 
 const telemetry: TelemetryEvent = {
   type: 'telemetry',
@@ -60,40 +52,42 @@ const telemetry: TelemetryEvent = {
 
 const baseProps = {
   telemetry,
-  track: [{ latitude: -7.7707, longitude: 110.3775 }],
   mission: initialFlightState.mission,
   site,
-  route,
   calibration,
   baseMapAvailable: true,
 }
 
 describe('NavigationMap', () => {
-  it('renders the KKI-style satellite map, route, and VTOL position', () => {
+  it('renders the satellite map and VTOL drone position', () => {
     render(<NavigationMap {...baseProps} />)
     expect(screen.getByTitle('VTOL satellite base map')).toHaveAttribute(
       'src',
       expect.stringContaining('maps.google.com/maps'),
     )
+    expect(screen.getByTitle('VTOL satellite base map')).toHaveAttribute(
+      'src',
+      expect.stringContaining('z=16'),
+    )
     expect(screen.getByLabelText('VTOL position marker')).toHaveAttribute(
       'data-course-heading',
       '91',
     )
-    expect(screen.getByLabelText('VTOL mission route')).toBeVisible()
+    expect(screen.queryByLabelText('VTOL mission route')).not.toBeInTheDocument()
     expect(screen.getByText(/7\.770600° S/)).toBeVisible()
     expect(screen.getByText(/110\.377600° E/)).toBeVisible()
   })
 
-  it('keeps the route visible while waiting for a GPS fix', () => {
+  it('keeps the satellite map visible while waiting for GPS', () => {
     render(
       <NavigationMap
         {...baseProps}
         telemetry={null}
-        track={[]}
       />,
     )
-    expect(screen.getByText('WAITING FOR GPS FIX')).toBeVisible()
-    expect(screen.getByLabelText('VTOL mission route')).toBeVisible()
+    expect(screen.getByTitle('VTOL satellite base map')).toBeVisible()
+    expect(screen.queryByLabelText('VTOL position marker')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('VTOL mission route')).not.toBeInTheDocument()
   })
 
   it('recenters to the latest telemetry only after refresh', () => {
@@ -111,10 +105,10 @@ describe('NavigationMap', () => {
     )
   })
 
-  it('keeps the SVG overlay when satellite imagery is unavailable', () => {
+  it('does not render the SVG route overlay when satellite imagery is unavailable', () => {
     render(<NavigationMap {...baseProps} baseMapAvailable={false} />)
     expect(screen.queryByTitle('VTOL satellite base map')).not.toBeInTheDocument()
     expect(screen.getByText('SATELLITE MAP UNAVAILABLE')).toBeVisible()
-    expect(screen.getByLabelText('VTOL mission route')).toBeVisible()
+    expect(screen.queryByLabelText('VTOL mission route')).not.toBeInTheDocument()
   })
 })
