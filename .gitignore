@@ -28,6 +28,9 @@ out/
 *.pt
 *.onnx
 *.engine
+!model/*.pt
+!model/*.onnx
+!model/*.engine
 
 # Local media and temporary files
 *.mp4
