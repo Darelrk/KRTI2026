@@ -31,6 +31,7 @@ out/
 !model/*.pt
 !model/*.onnx
 !model/*.engine
+model/data/
 
 # Local media and temporary files
 *.mp4
