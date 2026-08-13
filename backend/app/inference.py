@@ -130,10 +130,14 @@ class RTSPInference:
 
 
 class OpenCVFrameSource:
-    def __init__(self, url: str) -> None:
+    def __init__(self, source: str | int) -> None:
         import cv2
 
-        self.capture = cv2.VideoCapture(url)
+        backend = cv2.CAP_DSHOW if isinstance(source, int) else cv2.CAP_ANY
+        self.capture = cv2.VideoCapture(source, backend)
+        if not self.capture.isOpened():
+            self.capture.release()
+            raise RuntimeError(f"unable to open video source: {source!r}")
 
     def read(self) -> tuple[bool, object | None]:
         return self.capture.read()
@@ -142,6 +146,74 @@ class OpenCVFrameSource:
         self.capture.release()
 
 
+class FFmpegFrameSource:
+    """Read a named Windows DirectShow device as BGR frames."""
+
+    def __init__(
+        self,
+        device_name: str,
+        width: int = 720,
+        height: int = 480,
+        fps: int = 25,
+        executable: str = "ffmpeg",
+    ) -> None:
+        import shutil
+        import subprocess
+
+        if shutil.which(executable) is None:
+            raise RuntimeError(f"ffmpeg executable not found: {executable}")
+        self.width = width
+        self.height = height
+        self._frame_bytes = width * height * 3
+        self._process = subprocess.Popen(
+            [
+                executable,
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-f",
+                "dshow",
+                "-video_size",
+                f"{width}x{height}",
+                "-framerate",
+                str(fps),
+                "-i",
+                f"video={device_name}",
+                "-f",
+                "rawvideo",
+                "-pix_fmt",
+                "bgr24",
+                "pipe:1",
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        if self._process.stdout is None:
+            self.close()
+            raise RuntimeError("ffmpeg stdout is unavailable")
+
+    def read(self) -> tuple[bool, object | None]:
+        import numpy as np
+
+        if self._process.poll() is not None or self._process.stdout is None:
+            return False, None
+        data = self._process.stdout.read(self._frame_bytes)
+        if len(data) != self._frame_bytes:
+            return False, None
+        return True, np.frombuffer(data, dtype=np.uint8).reshape(
+            self.height, self.width, 3
+        )
+
+    def close(self) -> None:
+        if self._process.poll() is None:
+            self._process.terminate()
+            try:
+                self._process.wait(timeout=2)
+            except TimeoutError:
+                self._process.kill()
+        for stream in (self._process.stdout, self._process.stderr):
+            if stream is not None:
+                stream.close()
 class UltralyticsPersonDetector:
     def __init__(self, model_path: str) -> None:
         from ultralytics import YOLO

@@ -15,22 +15,35 @@ The physical selection mechanism is intentionally not assumed yet: the transmitt
 - EventBus is outbound-only for dashboard events; camera switching uses REST rather than changing EventBus into a command bus.
 - The receiver must have at most one active frame source.
 
-## Configuration
+## Video input configuration
+
+The confirmed receiver path is analog AV/CVBS into the `AV TO USB2.0` capture
+device. Windows exposes it as a Camera (`usbvideo`) and as an audio endpoint;
+it is not an RTSP endpoint and not a COM port.
 
 Environment variables:
 
 ```env
-FRONT_VIDEO_URL=rtsp://transmitter/receiver
-DOWN_VIDEO_URL=rtsp://transmitter/receiver
-NIGHT_VIDEO_URL=rtsp://transmitter/receiver
+VIDEO_DEVICE_NAME=AV TO USB2.0
+VIDEO_DEVICE_INDEX=
+FRONT_VIDEO_URL=
+DOWN_VIDEO_URL=
+NIGHT_VIDEO_URL=
 REGULAR_MODEL_PATH=model/best.pt
 NIGHT_MODEL_PATH=model/yolo26xthermal.pt
 ACTIVE_CAMERA=front
 ```
 
-If the receiver exposes different URLs, profiles may use different URLs. If all cameras share one receiver stream, use the same URL for each profile. `Settings` parses a registry of three camera profiles; missing URLs disable profiles.
+`VIDEO_DEVICE_NAME` is preferred because OpenCV numeric indices are unstable
+when other webcams are connected. The backend uses DirectShow/FFmpeg to open
+the named device and reads BGR frames at 720x480/25 fps, matching a mode
+advertised by the capture card. `VIDEO_DEVICE_INDEX` remains available for
+devices that cannot be opened by name. Legacy `*_VIDEO_URL` fields remain
+available for RTSP or other string sources.
 
-`ACTIVE_CAMERA` identifies the logical camera expected at startup. Without a hardware adapter, startup can attach to the already-selected transmitter input, but a later switch between profiles sharing one URL fails closed instead of claiming that the physical camera changed.
+All three camera profiles may point to the same capture device. Only one
+source is opened. `ACTIVE_CAMERA` identifies the logical camera expected at
+startup; a later switch on a shared device requires `HardwareSwitcher`.
 
 ## Hardware adapter boundary
 

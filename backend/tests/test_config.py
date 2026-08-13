@@ -68,6 +68,20 @@ def test_camera_profiles_are_parsed():
     assert settings.active_camera == "night"
 
 
+def test_usb_capture_device_is_parsed():
+    settings = Settings.from_env(
+        {
+            "VIDEO_DEVICE_NAME": " AV TO USB2.0 ",
+            "VIDEO_DEVICE_INDEX": "2",
+        }
+    )
+
+    assert settings.video_device_name == "AV TO USB2.0"
+    assert settings.video_device_index == 2
+    assert settings.camera_profiles["front"].video_device_name == "AV TO USB2.0"
+    assert settings.camera_profiles["front"].video_device_index == 2
+
+
 def test_invalid_active_camera_is_rejected():
     with pytest.raises(ConfigError, match="ACTIVE_CAMERA"):
         Settings.from_env({"ACTIVE_CAMERA": "side"})

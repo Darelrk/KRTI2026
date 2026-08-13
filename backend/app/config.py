@@ -18,6 +18,20 @@ class CameraProfile:
     id: CameraId
     video_url: str | None
     model_path: Path
+    video_device_name: str | None = None
+    video_device_index: int | None = None
+
+    @property
+    def source(self) -> str | int | None:
+        if self.video_device_name:
+            return f"dshow://{self.video_device_name}"
+        if self.video_device_index is not None:
+            return self.video_device_index
+        return self.video_url
+
+    @property
+    def configured(self) -> bool:
+        return self.source is not None
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,6 +43,8 @@ class Settings:
     front_video_url: str | None = None
     down_video_url: str | None = None
     night_video_url: str | None = None
+    video_device_name: str | None = None
+    video_device_index: int | None = None
     regular_model_path: Path = Path("model/best.pt")
     night_model_path: Path = Path("model/yolo26xthermal.pt")
     active_camera: CameraId = "front"
@@ -52,14 +68,23 @@ class Settings:
 
     @property
     def video_enabled(self) -> bool:
-        return any(profile.video_url for profile in self.camera_profiles.values())
+        return any(profile.configured for profile in self.camera_profiles.values())
 
     @property
     def camera_profiles(self) -> dict[CameraId, CameraProfile]:
         return {
-            "front": CameraProfile("front", self.front_video_url, self.regular_model_path),
-            "down": CameraProfile("down", self.down_video_url, self.regular_model_path),
-            "night": CameraProfile("night", self.night_video_url, self.night_model_path),
+            camera: CameraProfile(
+                camera,
+                url,
+                self.night_model_path if camera == "night" else self.regular_model_path,
+                self.video_device_name,
+                self.video_device_index,
+            )
+            for camera, url in (
+                ("front", self.front_video_url),
+                ("down", self.down_video_url),
+                ("night", self.night_video_url),
+            )
         }
 
     @classmethod
@@ -90,6 +115,8 @@ class Settings:
             or _optional_text(environ.get("VIDEO_URL")),
             down_video_url=_optional_text(environ.get("DOWN_VIDEO_URL")),
             night_video_url=_optional_text(environ.get("NIGHT_VIDEO_URL")),
+            video_device_name=_optional_text(environ.get("VIDEO_DEVICE_NAME")),
+            video_device_index=_optional_nonnegative_int(environ, "VIDEO_DEVICE_INDEX"),
             regular_model_path=Path(
                 _text(
                     environ,
@@ -124,6 +151,20 @@ def _camera_id(value: str | None, default: CameraId) -> CameraId:
 
 def _text(environ: Mapping[str, str], name: str, default: str) -> str:
     return _optional_text(environ.get(name)) or default
+
+def _optional_nonnegative_int(
+    environ: Mapping[str, str], name: str
+) -> int | None:
+    raw = _optional_text(environ.get(name))
+    if raw is None:
+        return None
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise ConfigError(f"{name} must be an integer") from exc
+    if value < 0:
+        raise ConfigError(f"{name} must not be negative")
+    return value
 
 
 def _positive_int(environ: Mapping[str, str], name: str, default: int) -> int:

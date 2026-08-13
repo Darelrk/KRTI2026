@@ -343,7 +343,7 @@ def build_runtime(
             serial_error = str(error)
 
     profiles = settings.camera_profiles
-    if any(profile.video_url for profile in profiles.values()):
+    if any(profile.configured for profile in profiles.values()):
         camera_switcher = CameraSwitcher(
             profiles=profiles,
             store=store,

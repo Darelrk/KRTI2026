@@ -173,3 +173,48 @@ async def test_shared_receiver_without_adapter_fails_closed(tmp_path: Path):
 
     assert switcher.active_camera == "front"
     assert source.closed is False
+
+
+@pytest.mark.asyncio
+async def test_usb_receiver_profile_uses_device_source_and_model(
+    tmp_path: Path,
+):
+    model = tmp_path / "regular.pt"
+    model.touch()
+    sources: list[object] = []
+
+    def source_factory(source: str | int) -> FakeSource:
+        sources.append(source)
+        return FakeSource(str(source))
+
+    switcher = CameraSwitcher(
+        profiles={
+            "front": CameraProfile(
+                "front",
+                None,
+                model,
+                video_device_name="AV TO USB2.0",
+            ),
+            "down": CameraProfile(
+                "down",
+                None,
+                model,
+                video_device_name="AV TO USB2.0",
+            ),
+            "night": CameraProfile(
+                "night",
+                None,
+                model,
+                video_device_name="AV TO USB2.0",
+            ),
+        },
+        store=StateStore(),
+        event_bus=EventBus(),
+        source_factory=source_factory,
+        detector_factory=FakeDetector,
+    )
+
+    await switcher.start("front")
+
+    assert sources == ["dshow://AV TO USB2.0"]
+    assert switcher.status()["cameras"]["front"]["source"] == "dshow://AV TO USB2.0"

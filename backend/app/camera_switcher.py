@@ -29,12 +29,16 @@ class CameraNotConfiguredError(CameraSwitchError):
     pass
 
 
-SourceFactory = Callable[[str], FrameSource]
+SourceFactory = Callable[[str | int], FrameSource]
 DetectorFactory = Callable[[str], PersonDetector]
 
 
-def _default_source_factory(url: str) -> FrameSource:
-    return LatestFrameBuffer(OpenCVFrameSource(url))
+def _default_source_factory(source: str | int) -> FrameSource:
+    if isinstance(source, str) and source.startswith("dshow://"):
+        from .inference import FFmpegFrameSource
+
+        return LatestFrameBuffer(FFmpegFrameSource(source.removeprefix("dshow://")))
+    return LatestFrameBuffer(OpenCVFrameSource(source))
 
 
 class CameraSwitcher:
@@ -106,7 +110,7 @@ class CameraSwitcher:
             shared_stream = (
                 old is not None
                 and old_profile is not None
-                and old_profile.video_url == profile.video_url
+                and old_profile.source == profile.source
             )
 
             if shared_stream:
@@ -165,9 +169,9 @@ class CameraSwitcher:
             "hardwareSwitcherConfigured": self._hardware_switcher is not None,
             "cameras": {
                 camera: {
-                    "configured": bool(profile.video_url),
+                    "configured": profile.configured,
                     "active": camera == self._active_camera,
-                    "stream": profile.video_url,
+                    "source": profile.source,
                     "model": str(profile.model_path),
                 }
                 for camera, profile in self._profiles.items()
@@ -211,15 +215,16 @@ class CameraSwitcher:
 
     def _validate_profile(self, camera: CameraId) -> CameraProfile:
         profile = self._profiles.get(camera)
-        if profile is None or not profile.video_url:
+        if profile is None or not profile.configured:
             raise CameraNotConfiguredError(f"camera {camera!r} is not configured")
         if not profile.model_path.is_file():
             raise CameraSwitchError(f"model not found: {profile.model_path}")
         return profile
 
     def _build_inference(self, profile: CameraProfile) -> RTSPInference:
-        assert profile.video_url is not None
-        source = self._source_factory(profile.video_url)
+        source_value = profile.source
+        assert source_value is not None
+        source = self._source_factory(source_value)
         try:
             detector = self._detector_factory(str(profile.model_path))
             return RTSPInference(
