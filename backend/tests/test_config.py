@@ -51,3 +51,23 @@ def test_environment_values_are_parsed_and_trimmed():
         "http://localhost:3000",
         "http://127.0.0.1:3000",
     )
+
+def test_camera_profiles_are_parsed():
+    settings = Settings.from_env(
+        {
+            "FRONT_VIDEO_URL": " rtsp://front ",
+            "DOWN_VIDEO_URL": "rtsp://down",
+            "NIGHT_VIDEO_URL": "rtsp://night",
+            "REGULAR_MODEL_PATH": "model/best.pt",
+            "NIGHT_MODEL_PATH": "model/yolo26xthermal.pt",
+            "ACTIVE_CAMERA": "night",
+        }
+    )
+    assert settings.camera_profiles["night"].video_url == "rtsp://night"
+    assert settings.camera_profiles["front"].model_path == Path("model/best.pt")
+    assert settings.active_camera == "night"
+
+
+def test_invalid_active_camera_is_rejected():
+    with pytest.raises(ConfigError, match="ACTIVE_CAMERA"):
+        Settings.from_env({"ACTIVE_CAMERA": "side"})

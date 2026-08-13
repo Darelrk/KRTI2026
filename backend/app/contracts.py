@@ -11,7 +11,7 @@ class StrictModel(BaseModel):
 
 LinkState = Literal["connected", "stale", "disconnected"]
 FlightMode = Literal["MANUAL", "AUTO", "HOLD", "ELS"]
-CameraId = Literal["front", "down"]
+CameraId = Literal["front", "down", "night"]
 VisionClass = Literal["person", "aruco", "gate", "drop_zone", "line", "landing_pad"]
 PayloadState = Literal["secured", "armed", "released", "unknown"]
 ElsState = Literal["standby", "countdown", "active"]

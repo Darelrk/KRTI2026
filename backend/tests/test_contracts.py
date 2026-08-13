@@ -76,3 +76,20 @@ def test_command_result_has_explicit_unknown_status():
         commandId="a", status="unknown", reason="No acknowledgment"
     )
     assert result.status == "unknown"
+
+
+def test_vision_accepts_night_camera():
+    event = VisionEvent.model_validate(
+        {
+            "type": "vision",
+            "seq": 1,
+            "timestampMs": 1,
+            "id": "night-1",
+            "frameId": 1,
+            "camera": "night",
+            "className": "person",
+            "confidence": 0.8,
+            "box": {"x": 0.1, "y": 0.2, "width": 0.3, "height": 0.4},
+        }
+    )
+    assert event.camera == "night"
