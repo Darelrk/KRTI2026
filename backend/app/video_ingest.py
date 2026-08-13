@@ -43,6 +43,12 @@ class LatestFrameBuffer:
             self._read_sequence = self._sequence
             return True, self._latest
 
+    def clear(self) -> None:
+        """Drop frames captured before a physical camera switch."""
+        with self._condition:
+            self._latest = None
+            self._read_sequence = self._sequence
+
     def close(self) -> None:
         self._stopped.set()
         close = getattr(self.source, "close", None)

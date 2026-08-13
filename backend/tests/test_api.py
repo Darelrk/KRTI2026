@@ -30,6 +30,17 @@ def test_health_and_snapshot_endpoints_are_available():
     assert snapshot.json()["telemetry"] is None
 
 
+def test_camera_switch_endpoint_reports_disabled_selector():
+    with app_client() as client:
+        status = client.get("/api/cameras")
+        response = client.post("/api/cameras/switch", json={"camera": "front"})
+
+    assert status.status_code == 200
+    assert status.json()["hardwareSwitcherConfigured"] is False
+    assert response.status_code == 409
+    assert "disabled" in response.json()["error"]
+
+
 def test_command_endpoint_returns_fail_closed_result():
     with app_client() as client:
         response = client.post(

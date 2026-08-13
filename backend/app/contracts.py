@@ -210,6 +210,9 @@ class CommandRequest(StrictModel):
     type: CommandType
 
 
+class CameraSwitchRequest(StrictModel):
+    camera: CameraId
+
 class CommandResult(StrictModel):
     commandId: str
     status: Literal["accepted", "rejected", "unknown"]

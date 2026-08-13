@@ -3,29 +3,29 @@ from __future__ import annotations
 import asyncio
 import os
 from contextlib import asynccontextmanager
-from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from .camera_selector import HardwareSwitcher
+from .camera_switcher import CameraSwitchError, CameraSwitcher
 from .config import Settings
 from .contracts import (
+    CameraSwitchRequest,
     CommandRequest,
     CommandResult,
     ComponentHealth,
-    FlightEvent,
     HealthResponse,
     LinkEvent,
 )
 from .event_bus import EventBus
-from .inference import OpenCVFrameSource, RTSPInference, UltralyticsPersonDetector
+from .inference import RTSPInference
 from .mavlink_reader import MavlinkReader
 from .mavlink_writer import MavlinkWriter, OutboundCommand
 from .reconnect import ReconnectPolicy
 from .state_store import StateStore
-from .video_ingest import LatestFrameBuffer
 
 
 class Runtime:
@@ -36,6 +36,8 @@ class Runtime:
         writer: MavlinkWriter | None = None,
         reader: MavlinkReader | None = None,
         inference: RTSPInference | None = None,
+        camera_switcher: CameraSwitcher | None = None,
+        initial_camera: str | None = None,
         serial_error: str | None = None,
         video_error: str | None = None,
         reconnect_policy: ReconnectPolicy | None = None,
@@ -45,6 +47,8 @@ class Runtime:
         self.writer = writer
         self.reader = reader
         self.inference = inference
+        self.camera_switcher = camera_switcher
+        self.initial_camera = initial_camera
         self.serial_error = serial_error
         self.video_error = video_error
         self.reconnect_policy = reconnect_policy or ReconnectPolicy()
@@ -53,15 +57,24 @@ class Runtime:
 
     async def start(self) -> None:
         self._stop.clear()
-        if self.inference is not None:
+        if self.camera_switcher is not None:
+            target = self.initial_camera or "front"
+            try:
+                await self.camera_switcher.start(target)  # type: ignore[arg-type]
+            except CameraSwitchError as error:
+                self.video_error = str(error)
+        elif self.inference is not None:
             start = getattr(self.inference.source, "start", None)
             if callable(start):
                 start()
         if self.reader is not None:
             self._tasks.append(asyncio.create_task(self._serial_loop()))
-        if self.inference is not None:
+        if self.camera_switcher is not None and self.camera_switcher.active_camera is not None:
+            self._tasks.append(
+                asyncio.create_task(self._inference_loop(), name="camera-inference")
+            )
+        elif self.inference is not None:
             self._tasks.append(asyncio.create_task(self._inference_loop()))
-
 
     async def stop(self) -> None:
         self._stop.set()
@@ -70,15 +83,43 @@ class Runtime:
         if self._tasks:
             await asyncio.gather(*self._tasks, return_exceptions=True)
         self._tasks.clear()
-        if self.inference is not None:
+        if self.camera_switcher is not None:
+            await self.camera_switcher.close()
+        elif self.inference is not None:
             self.inference.close()
         if self.reader is not None:
             close = getattr(self.reader.transport, "close", None)
             if callable(close):
                 close()
-
     async def snapshot(self) -> dict[str, Any]:
         return (await self.store.snapshot()).model_dump(mode="json")
+
+    def camera_status(self) -> dict[str, Any]:
+        if self.camera_switcher is None:
+            return {
+                "camera": None,
+                "active": None,
+                "hardwareSwitcherConfigured": False,
+                "cameras": {},
+                "model": None,
+                "error": self.video_error,
+            }
+        return self.camera_switcher.status()
+
+    async def switch_camera(self, camera: str) -> dict[str, Any]:
+        if self.camera_switcher is None:
+            raise CameraSwitchError("camera switching is disabled")
+        try:
+            result = await self.camera_switcher.switch(camera)  # type: ignore[arg-type]
+            self.video_error = None
+            if not any(task.get_name() == "camera-inference" for task in self._tasks):
+                self._tasks.append(
+                    asyncio.create_task(self._inference_loop(), name="camera-inference")
+                )
+            return result
+        except CameraSwitchError as error:
+            self.video_error = str(error)
+            raise
 
     async def command(self, request: CommandRequest) -> CommandResult:
         if self.writer is None:
@@ -117,7 +158,11 @@ class Runtime:
             inference=ComponentHealth(
                 state=inference_state,
                 lastEventAt=last_event,
-                error=self.inference.last_error if self.inference else None,
+                error=(
+                    self.camera_switcher.last_error
+                    if self.camera_switcher
+                    else self.inference.last_error if self.inference else None
+                ),
             ),
         )
     async def _serial_loop(self) -> None:
@@ -151,17 +196,24 @@ class Runtime:
                     pass
 
     async def _inference_loop(self) -> None:
-        assert self.inference is not None
         while not self._stop.is_set():
             try:
-                events = await self.inference.publish_once()
+                if self.camera_switcher is not None:
+                    events = await self.camera_switcher.publish_once()
+                else:
+                    assert self.inference is not None
+                    events = await self.inference.publish_once()
                 for event in events:
                     await self.event_bus.publish(event)
             except asyncio.CancelledError:
                 raise
             except Exception as error:
                 self.video_error = str(error)
-                self.inference.health_state = "degraded"
+                if self.camera_switcher is not None:
+                    self.camera_switcher.last_error = str(error)
+                elif self.inference is not None:
+                    self.inference.health_state = "degraded"
+                    self.inference.last_error = str(error)
                 events = []
             if not events:
                 await asyncio.sleep(0.05)
@@ -170,13 +222,16 @@ class Runtime:
         if self.reader is None:
             return "degraded" if self.serial_error else "disabled"
         return {"connected": "ready", "stale": "stale", "disconnected": "disconnected"}[link]
-
     def _video_state(self) -> str:
+        if self.camera_switcher is not None:
+            return self.camera_switcher.health_state
         if self.inference is None:
             return "degraded" if self.video_error else "disabled"
         return self.inference.health_state
 
     def _inference_state(self) -> str:
+        if self.camera_switcher is not None:
+            return self.camera_switcher.health_state
         if self.inference is None:
             return "disabled"
         return self.inference.health_state
@@ -214,6 +269,20 @@ def create_app(
     async def snapshot() -> dict[str, Any]:
         return await runtime.snapshot()
 
+    @app.get("/api/cameras")
+    async def cameras() -> dict[str, Any]:
+        return runtime.camera_status()
+
+    @app.post("/api/cameras/switch", response_model=None)
+    async def switch_camera(request: CameraSwitchRequest) -> dict[str, Any] | JSONResponse:
+        try:
+            return await runtime.switch_camera(request.camera)
+        except CameraSwitchError as error:
+            return JSONResponse(
+                status_code=409,
+                content={"error": str(error), "camera": request.camera},
+            )
+
     @app.post("/api/commands", response_model=CommandResult)
     async def command(request: CommandRequest) -> CommandResult | JSONResponse:
         result = await runtime.command(request)
@@ -242,14 +311,17 @@ def create_app(
     return app
 
 
-def build_runtime(settings: Settings) -> Runtime:
+def build_runtime(
+    settings: Settings,
+    hardware_switcher: HardwareSwitcher | None = None,
+) -> Runtime:
     store = StateStore()
     event_bus = EventBus()
     serial_error: str | None = None
     video_error: str | None = None
     reader: MavlinkReader | None = None
     writer: MavlinkWriter | None = None
-    inference: RTSPInference | None = None
+    camera_switcher: CameraSwitcher | None = None
 
     if settings.pixhawk_serial:
         try:
@@ -270,27 +342,23 @@ def build_runtime(settings: Settings) -> Runtime:
         except Exception as error:
             serial_error = str(error)
 
-    if settings.video_url:
-        try:
-            model_path = Path(settings.model_path)
-            if not model_path.exists():
-                raise FileNotFoundError(f"model not found: {model_path}")
-            source = LatestFrameBuffer(OpenCVFrameSource(settings.video_url))
-            inference = RTSPInference(
-                source=source,
-                detector=UltralyticsPersonDetector(str(model_path)),
-                store=store,
-                confidence=settings.inference_conf,
-            )
-        except Exception as error:
-            video_error = str(error)
+    profiles = settings.camera_profiles
+    if any(profile.video_url for profile in profiles.values()):
+        camera_switcher = CameraSwitcher(
+            profiles=profiles,
+            store=store,
+            event_bus=event_bus,
+            confidence=settings.inference_conf,
+            hardware_switcher=hardware_switcher,
+        )
 
     return Runtime(
         store=store,
         event_bus=event_bus,
         writer=writer,
         reader=reader,
-        inference=inference,
+        camera_switcher=camera_switcher,
+        initial_camera=settings.active_camera,
         serial_error=serial_error,
         video_error=video_error,
         reconnect_policy=ReconnectPolicy(settings.serial_reconnect_max_seconds),

@@ -29,6 +29,14 @@ def test_buffer_returns_only_newest_frame_once():
     assert source.closed is True
 
 
+def test_buffer_clear_drops_frames_from_previous_camera():
+    buffer = LatestFrameBuffer(ClosedSource())
+    buffer.push(SimpleNamespace(id="old"))
+    buffer.clear()
+    assert buffer.read() == (False, None)
+    buffer.close()
+
+
 def test_buffer_rejects_stale_frames():
     buffer = LatestFrameBuffer(ClosedSource(), max_age_seconds=0.01)
     buffer.push(SimpleNamespace(id=1), captured_at=time.monotonic() - 1)
